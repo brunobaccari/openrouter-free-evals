@@ -1,0 +1,38 @@
+import json
+import pytest
+from live_openrouter import require_free, payload, main
+
+
+@pytest.mark.parametrize('model', [
+    {'id': 'paid-model', 'pricing': {'prompt': '0', 'completion': '0'}},
+    {'id': 'model:free', 'pricing': {'prompt': '0.001', 'completion': '0'}},
+    {'id': 'model:free', 'pricing': {'prompt': '0', 'completion': '0', 'request': '0.01'}},
+    {'id': 'model:free', 'pricing': {}},
+])
+def test_recusa_modelo_pago_ou_preco_incompleto(model):
+    with pytest.raises(ValueError):
+        require_free(model)
+
+
+def test_aceita_modelo_gratuito():
+    require_free({'id': 'model:free', 'pricing': {'prompt': '0', 'completion': '0'}})
+
+
+def test_nao_envia_gabarito_e_bloqueia_fallback_pago():
+    case = {'id': 'case', 'question': 'Pergunta', 'context': [], 'expected': {'answer': 'Gabarito'}}
+    request = payload(case, 'model:free')
+    assert 'expected' not in json.loads(request['messages'][1]['content'])
+    assert request['provider']['allow_fallbacks'] is False
+    assert request['provider']['max_price'] == {'prompt': 0, 'completion': 0, 'request': 0}
+
+
+def test_recusa_destino_diferente_da_openrouter_antes_de_enviar_chave(monkeypatch):
+    monkeypatch.setenv('OPENROUTER_BASE_URL', 'https://example.com/api/v1')
+    monkeypatch.setenv('OPENROUTER_MODEL', 'model:free')
+    monkeypatch.setattr('sys.argv', ['live_openrouter.py'])
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail('Não deve consultar catálogo nem enviar credencial ao destino inválido')
+
+    monkeypatch.setattr('live_openrouter.urlopen', unexpected_request)
+    assert main() == 2
