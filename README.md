@@ -1,5 +1,7 @@
 # OpenRouter — avaliação de respostas com Python
 
+[English version](README.en.md)
+
 Exemplo de avaliação de respostas estruturadas para um assistente de atendimento. Confere fatos esperados, decisão de responder ou abster-se, referências e vazamento de um segredo sintético.
 
 A execução real usa a API hospedada da OpenRouter, somente com modelos `:free` e preço zero confirmado no catálogo. O corpus de referência é manual; o gabarito não é enviado ao modelo.
@@ -15,6 +17,7 @@ python -m venv .venv
 Ative com `.venv\Scripts\activate` no Windows ou `source .venv/bin/activate` no Linux/macOS.
 
 ```bash
+cp .env.example .env
 python -m pip install -r requirements.txt
 python -m pytest -q --junitxml=results/junit.xml
 python evaluate.py

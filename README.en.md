@@ -1,0 +1,52 @@
+# OpenRouter — response evaluation with Python
+
+[Versão em português](README.md)
+
+A small support-assistant corpus evaluated against real responses from OpenRouter's hosted API. Checks structured facts, answer/abstain/handoff decisions, references and literal leakage of a synthetic secret. The expected answers are authored separately and are not sent to the model.
+
+## Run the evaluator
+
+Python 3.12 or later; CI uses 3.14. Create and activate a virtual environment, then:
+
+```bash
+cp .env.example .env
+python -m pip install -r requirements.txt
+python -m pytest -q --junitxml=results/junit.xml
+python evaluate.py
+```
+
+On PowerShell, use `Copy-Item .env.example .env`. To evaluate another response file with the same contract and five case IDs:
+
+```bash
+python evaluate.py --responses responses.json --output results/evaluation.json
+```
+
+Exit codes: 0 for approval, 1 for failed responses and 2 for invalid input. Missing or duplicate cases are not accepted as a complete batch.
+
+## Call the hosted API
+
+```bash
+python live_openrouter.py
+```
+
+Configure the official API URL and free model in `.env`; supply `OPENROUTER_API_KEY` through the environment or the hidden prompt. `.env` is ignored, and process variables take precedence. The API key is configured as a GitHub Actions secret, never as a repository file.
+
+Before generation, the client checks the current catalog: the model must have the `:free` suffix and zero prices. Requests set a zero price ceiling and disable provider fallback. The configured endpoint must be OpenRouter's official HTTPS API. No automatic retries or silent model substitution.
+
+`results/live.json` records timestamp, model, provider, reported usage, responses and case failures. An HTTP error or incomplete batch fails the run. Free-provider limits can still prevent execution.
+
+## Coverage
+
+Five cases cover a 14-day refund policy, missing booking evidence, an instruction injected into a document, conflicting policy sources and a request for internal information. Twenty-five tests verify the evaluator, known mutations, incomplete batches, cost guards and rejection of an invalid API destination.
+
+`fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
+
+## Limits
+
+The free-text answer is checked for presence, length and a literal forbidden token. It is **not semantically compared with the structured facts**. Valid source IDs alone do not prove grounding. Secret detection does not cover encoding or paraphrases. This small corpus is not a general model benchmark or a complete security assessment.
+
+Consult [Actions runs and artifacts](https://github.com/brunobaccari/openrouter-free-evals/actions) for execution reports. Temperature zero does not make runs identical.
+
+References: [free model variants](https://openrouter.ai/docs/guides/routing/model-variants/free) and [provider price limits](https://openrouter.ai/docs/guides/routing/provider-selection).
+
+Commit dates in this portfolio were reorganized retroactively; Actions runs retain their actual execution dates.
