@@ -24,14 +24,22 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: test -n "$OPENROUTER_API_KEY"
       - name: Avaliar API hospedada
+        id: evaluate
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MODEL: ${{ inputs.model }}
         run: python live_openrouter.py --model "$MODEL"
       - uses: actions/upload-artifact@v4
+        id: artifact
         if: always()
         with:
           name: live-evaluation
           path: results/live.json
-          retention-days: 7
-          if-no-files-found: ignore
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Resumo da avaliação live
+        if: always()
+        env:
+          EVALUATION_OUTCOME: ${{ steps.evaluate.outcome }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: python ci_summary.py live

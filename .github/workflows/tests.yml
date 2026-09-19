@@ -14,11 +14,25 @@ jobs:
           python-version: '3.14'
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m pytest -q --junitxml=results/junit.xml
-      - run: python evaluate.py
+      - name: Testes unitários do avaliador
+        id: tests
+        run: python -m pytest -q --junitxml=results/junit.xml
+      - name: Avaliar respostas manuais
+        id: fixtures
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        run: python evaluate.py
       - uses: actions/upload-artifact@v4
+        id: artifact
         if: always()
         with:
           name: results
           path: results/
-          retention-days: 7
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Resumo do avaliador e corpus manual
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          EVALUATION_OUTCOME: ${{ steps.fixtures.outcome }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: python ci_summary.py fixtures
