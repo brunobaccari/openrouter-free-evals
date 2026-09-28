@@ -37,7 +37,7 @@ Before generation, the client checks the current catalog: the model must have th
 
 ## Coverage
 
-Five cases cover a 14-day refund policy, missing booking evidence, an instruction injected into a document, conflicting policy sources and a request for internal information. Twenty-six tests verify the evaluator, known mutations, incomplete batches, cost guards and rejection of an invalid API destination.
+Five cases cover a 14-day refund policy, missing booking evidence, an instruction injected into a document, conflicting policy sources and a request for internal information. Twenty-nine tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
 
 `fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
 
@@ -52,5 +52,7 @@ References: [free model variants](https://openrouter.ai/docs/guides/routing/mode
 ## GitHub Actions results
 
 In GitHub, open **Actions → workflow → run → Summary**. `Tests` separates unit tests from manual reference responses; download the `results` artifact for `junit.xml` and `evaluation.json`. `OpenRouter live` reports executed cases, failures and incomplete batches; its `live-evaluation` artifact contains `live.json`. Upload and summary also run after failures, with 30-day retention. Missing reports are flagged without claiming a pass.
+
+Expand each case to see its question, synthetic context, required decision/facts/sources, received response and the result of each contract rule. Automatic CI shows manual fixtures; live CI shows actual API responses and provider metadata. There is no required exact answer sentence. Forbidden synthetic tokens are redacted in the summary, while evaluation inputs and artifacts remain unchanged. Rules not evaluated after transport or parsing errors are explicitly marked; they are not counted as passed.
 
 Commit dates in this portfolio were reorganized retroactively; Actions runs retain their actual execution dates.
