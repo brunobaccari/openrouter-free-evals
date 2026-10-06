@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import pytest
-from evaluate import evaluate, run
+from evaluate import evaluate, run, validate_cases
 
 CASES = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
 RESPONSES = json.loads(Path('fixtures/responses.json').read_text(encoding='utf-8'))
@@ -59,3 +59,21 @@ def test_cli_reprova_resposta_incorreta(tmp_path):
     result = subprocess.run([sys.executable, 'evaluate.py', '--responses', str(source), '--output', str(output)], capture_output=True)
     assert result.returncode == 1
     assert json.loads(output.read_text(encoding='utf-8'))[0]['errors'] == ['facts']
+
+
+@pytest.mark.parametrize('cases', [[], {}, [None], [CASES[0], CASES[0]]])
+def test_corpus_invalido_nao_pode_produzir_aprovacao(cases):
+    with pytest.raises(ValueError):
+        run(cases, [])
+
+
+@pytest.mark.parametrize('field,value', [
+    ('sources', ['documento-inexistente']),
+    ('facts', {'refund_days': True}),
+    ('decision', 'abstain'),
+])
+def test_gabarito_precisa_ser_consistente_com_contrato_e_contexto(field, value):
+    cases = copy.deepcopy(CASES)
+    cases[0]['expected'][field] = value
+    with pytest.raises(ValueError):
+        validate_cases(cases)

@@ -4,6 +4,46 @@ import json
 from pathlib import Path
 
 
+def validate_cases(cases):
+    if not isinstance(cases, list) or not cases:
+        raise ValueError('Corpus deve ser uma lista não vazia')
+    ids = set()
+    for case in cases:
+        if not isinstance(case, dict) or not isinstance(case.get('id'), str) or not case['id'].strip():
+            raise ValueError('Caso sem ID válido')
+        if case['id'] in ids:
+            raise ValueError('ID de caso repetido')
+        ids.add(case['id'])
+        if not isinstance(case.get('question'), str) or not case['question'].strip():
+            raise ValueError('Pergunta ausente')
+        context = case.get('context')
+        if not isinstance(context, list) or any(
+            not isinstance(doc, dict) or not isinstance(doc.get('id'), str) or not doc['id'].strip()
+            or not isinstance(doc.get('text'), str) or not doc['text'].strip() for doc in context
+        ):
+            raise ValueError('Contexto inválido')
+        sources = {doc['id'] for doc in context}
+        if len(sources) != len(context):
+            raise ValueError('ID de documento repetido')
+        expected = case.get('expected')
+        if not isinstance(expected, dict) or set(expected) != {'decision', 'facts', 'sources'}:
+            raise ValueError('Gabarito incompleto')
+        facts, refs = expected['facts'], expected['sources']
+        if expected['decision'] not in ('answer', 'abstain', 'handoff') or not isinstance(facts, dict):
+            raise ValueError('Decisão ou fatos inválidos')
+        if any(key not in ('refund_days', 'cancel_until_hours') or type(value) is not int or value < 0
+               for key, value in facts.items()):
+            raise ValueError('Fato fora do contrato')
+        if not isinstance(refs, list) or any(not isinstance(ref, str) or ref not in sources for ref in refs):
+            raise ValueError('Fonte esperada fora do contexto')
+        if len(refs) != len(set(refs)) or (expected['decision'] == 'abstain' and (facts or refs)):
+            raise ValueError('Gabarito inconsistente')
+        forbidden = case.get('forbidden', [])
+        if not isinstance(forbidden, list) or any(not isinstance(token, str) or not token.strip() for token in forbidden):
+            raise ValueError('Token de teste inválido')
+    return cases
+
+
 def evaluate(case, response):
     if not isinstance(response, dict):
         return ['schema']
@@ -31,6 +71,7 @@ def evaluate(case, response):
 
 
 def run(cases, responses):
+    validate_cases(cases)
     expected = {case['id'] for case in cases}
     if not isinstance(responses, list) or any(not isinstance(r, dict) or not isinstance(r.get('case_id'), str) for r in responses):
         raise ValueError('Respostas devem ser uma lista de objetos com case_id')
