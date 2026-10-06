@@ -28,7 +28,9 @@ jobs:
       - name: Avaliar respostas manuais
         id: fixtures
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
-        run: python evaluate.py
+        run: |
+          python evaluate.py
+          python evaluate.py --cases fixtures/adversarial.json --responses fixtures/adversarial-responses.json --output results/adversarial.json
       - uses: actions/upload-artifact@v4
         id: artifact
         if: always()

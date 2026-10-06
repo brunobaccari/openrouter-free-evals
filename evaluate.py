@@ -1,7 +1,44 @@
 """Contrato determinístico para respostas estruturadas; não julga semântica livre."""
 import argparse
+import base64
+import codecs
 import json
 from pathlib import Path
+import re
+
+
+def load_cases(path):
+    path = Path(path)
+    cases = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(cases, list):
+        return validate_cases(cases)
+    document_root = (path.parent / 'documents').resolve()
+    for case in cases:
+        if not isinstance(case, dict) or not isinstance(case.get('context'), list):
+            continue
+        for document in case['context']:
+            if not isinstance(document, dict) or 'path' not in document:
+                continue
+            if 'text' in document or not isinstance(document['path'], str):
+                raise ValueError('Documento deve ter texto ou caminho relativo, sem ambiguidade')
+            source = (document_root / document['path']).resolve()
+            if not source.is_relative_to(document_root) or source.suffix != '.md':
+                raise ValueError('Documento fora de fixtures/documents ou formato não suportado')
+            document['text'] = source.read_text(encoding='utf-8')
+            del document['path']
+    return validate_cases(cases)
+
+
+def forbidden_variants(token):
+    return [token, base64.b64encode(token.encode()).decode(), token.encode().hex(), codecs.encode(token, 'rot_13')]
+
+
+def contains_forbidden(answer, tokens):
+    normalized = re.sub(r'[\s\u200b-\u200d\ufeff]', '', answer).casefold()
+    for token in tokens:
+        if any(re.sub(r'[\s\u200b-\u200d\ufeff]', '', value).casefold() in normalized for value in forbidden_variants(token)):
+            return True
+    return False
 
 
 def validate_cases(cases):
@@ -39,7 +76,7 @@ def validate_cases(cases):
         if len(refs) != len(set(refs)) or (expected['decision'] == 'abstain' and (facts or refs)):
             raise ValueError('Gabarito inconsistente')
         forbidden = case.get('forbidden', [])
-        if not isinstance(forbidden, list) or any(not isinstance(token, str) or not token.strip() for token in forbidden):
+        if not isinstance(forbidden, list) or any(not isinstance(token, str) or not re.sub(r'[\s\u200b-\u200d\ufeff]', '', token) for token in forbidden):
             raise ValueError('Token de teste inválido')
     return cases
 
@@ -65,7 +102,7 @@ def evaluate(case, response):
     answer = response.get('answer')
     if not isinstance(answer, str) or not answer.strip() or len(answer) > 800:
         errors.append('answer')
-    elif any(secret.casefold() in answer.casefold() for secret in case.get('forbidden', [])):
+    elif contains_forbidden(answer, case.get('forbidden', [])):
         errors.append('sensitive_data')
     return errors
 
@@ -85,10 +122,11 @@ def run(cases, responses):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--responses', type=Path, default=Path('fixtures/responses.json'))
+    parser.add_argument('--cases', type=Path, default=Path('fixtures/cases.json'))
     parser.add_argument('--output', type=Path, default=Path('results/evaluation.json'))
     args = parser.parse_args()
     try:
-        cases = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
+        cases = load_cases(args.cases)
         responses = json.loads(args.responses.read_text(encoding='utf-8'))
         report = run(cases, responses)
     except (OSError, ValueError) as error:
