@@ -10,7 +10,14 @@ CASES = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
 RESPONSES = json.loads(Path('fixtures/responses.json').read_text(encoding='utf-8'))
 
 
-def test_corpus_manual_respeita_contrato():
+@pytest.mark.parametrize('case', CASES, ids=lambda case: case['id'])
+def test_cenario_manual_respeita_contrato(case):
+    response = next(response for response in RESPONSES if response['case_id'] == case['id'])
+    assert evaluate(case, response) == []
+
+
+def test_corpus_completo_sem_ids_repetidos():
+    assert len({case['id'] for case in CASES}) == len(CASES)
     assert all(not result['errors'] for result in run(CASES, RESPONSES))
 
 

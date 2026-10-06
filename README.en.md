@@ -15,7 +15,7 @@ python -m pytest -q --junitxml=results/junit.xml
 python evaluate.py
 ```
 
-On PowerShell, use `Copy-Item .env.example .env`. To evaluate another response file with the same contract and five case IDs:
+On PowerShell, use `Copy-Item .env.example .env`. To evaluate another response file with the same contract and all case IDs in the corpus:
 
 ```bash
 python evaluate.py --responses responses.json --output results/evaluation.json
@@ -37,12 +37,9 @@ Before generation, the client checks the current catalog: the model must have th
 
 ## Coverage
 
-Five cases cover a 14-day refund policy, missing booking evidence, an instruction injected into a document, conflicting policy sources and a request for internal information. Thirty-four tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
+Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Forty-nine tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
 
 `fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
-
-## Failure analysis
-
 
 ## Limits
 
