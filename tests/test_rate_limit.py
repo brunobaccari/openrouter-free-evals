@@ -3,6 +3,7 @@ from email.message import Message
 from email.utils import format_datetime
 from io import BytesIO
 import json
+import hashlib
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -109,7 +110,10 @@ def test_live_registra_retry_sem_repetir_falha_de_contrato(tmp_path, monkeypatch
                        'OPENROUTER_API_KEY': 'synthetic-test-value', 'OPENROUTER_MAX_RETRIES': '3',
                        'OPENROUTER_RETRY_BASE_SECONDS': '5', 'OPENROUTER_RETRY_BUDGET_SECONDS': '120'}.items():
         monkeypatch.setenv(key, value)
-    monkeypatch.setattr('sys.argv', ['live_openrouter.py', '--model', 'test:free'])
+    prompt = tmp_path / 'candidate.txt'
+    prompt.write_text('Prompt candidato do teste', encoding='utf-8')
+    monkeypatch.setattr('sys.argv', ['live_openrouter.py', '--model', 'test:free',
+                                   '--cases', str(tmp_path / 'fixtures/cases.json'), '--prompt-file', str(prompt)])
     calls, waits = [], []
 
     def request(req, timeout):
@@ -134,3 +138,6 @@ def test_live_registra_retry_sem_repetir_falha_de_contrato(tmp_path, monkeypatch
     assert report['cases'][1]['transport']['attempts'] == 1
     assert report['cases'][1]['errors'] == ['decision']
     assert report['retry_budget']['remaining_seconds'] == 113
+    assert report['prompt_sha256'] == hashlib.sha256(prompt.read_bytes()).hexdigest()
+    assert report['corpus_sha256'] == hashlib.sha256(json.dumps(cases, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert json.loads(calls[1].data)['messages'][0]['content'] == 'Prompt candidato do teste'

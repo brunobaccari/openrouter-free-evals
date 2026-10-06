@@ -4,6 +4,7 @@ from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from getpass import getpass
 import json
+import hashlib
 import math
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ import random
 import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from evaluate import evaluate, validate_cases
+from evaluate import evaluate, load_cases
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
@@ -58,14 +59,14 @@ def require_free(model):
         raise ValueError('Modelo com cobrança: execução recusada')
 
 
-def payload(case, model):
+def payload(case, model, system=SYSTEM):
     return {'model': model, 'temperature': 0, 'max_tokens': 4096,
             'reasoning': {'enabled': False, 'exclude': True},
             'response_format': {'type': 'json_schema', 'json_schema': {
                 'name': 'support_response', 'strict': True, 'schema': RESPONSE_SCHEMA}},
             'provider': {'allow_fallbacks': False, 'require_parameters': True,
                          'max_price': {'prompt': 0, 'completion': 0, 'request': 0}},
-            'messages': [{'role': 'system', 'content': SYSTEM},
+            'messages': [{'role': 'system', 'content': system},
                          {'role': 'user', 'content': json.dumps({key: case[key] for key in ('id', 'question', 'context')}, ensure_ascii=False)}]}
 
 
@@ -142,6 +143,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', default=os.environ.get('OPENROUTER_MODEL'))
     parser.add_argument('--output', type=Path, default=Path('results/live.json'))
+    parser.add_argument('--cases', type=Path, default=Path('fixtures/cases.json'))
+    parser.add_argument('--prompt-file', type=Path)
     args = parser.parse_args()
     report = None
     try:
@@ -163,7 +166,12 @@ def main():
                   'reasoning': {'enabled': False, 'exclude': True}, 'response_format': 'json_schema',
                   'retry_policy': policy, 'retry_budget': budget, 'catalog_transport': {}, 'cases': []}
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        cases = validate_cases(json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8')))
+        cases = load_cases(args.cases)
+        system = args.prompt_file.read_text(encoding='utf-8') if args.prompt_file else SYSTEM
+        if not system.strip():
+            raise ValueError('Prompt vazio')
+        report['corpus_sha256'] = hashlib.sha256(json.dumps(cases, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        report['prompt_sha256'] = hashlib.sha256(system.encode()).hexdigest()
         catalog = request_json(base_url + '/models', 30, policy, budget, report['catalog_transport'])['data']
         model = next((entry for entry in catalog if entry['id'] == args.model), None)
         if model is None:
@@ -180,7 +188,7 @@ def main():
         for case in cases:
             request = Request(base_url + '/chat/completions', method='POST',
                               headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
-                              data=json.dumps(payload(case, args.model)).encode())
+                              data=json.dumps(payload(case, args.model, system)).encode())
             transport = {}
             try:
                 result = request_json(request, 90, policy, budget, transport)
