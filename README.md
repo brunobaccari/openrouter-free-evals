@@ -96,6 +96,20 @@ São **20 cenários**, cada um com gabarito separado da mensagem enviada ao mode
 
 Os testes alteram prazo, tipo do valor, referência, decisão e texto sensível para comprovar que essas falhas são detectadas. Um teste também executa o CLI e exige saída 1 diante de uma resposta errada.
 
+## Critérios para decidir uma mudança
+
+| Sinal | Decisão e próximo passo |
+| --- | --- |
+| Corpus vazio, IDs repetidos ou gabarito com fonte ausente do contexto | Bloquear antes de chamar a API. Corrigir o corpus e revisar a regra com quem responde pelo produto. |
+| Prazo, decisão, fonte ou token proibido incorreto | Reprovar a resposta. QA isola o caso; desenvolvimento investiga prompt e integração. Não mudar o gabarito para acompanhar a saída do modelo. |
+| HTTP 429 após o orçamento, timeout ou lote incompleto | Resultado inconclusivo sobre qualidade do modelo. Conferir o provedor antes de repetir; conservar a execução falha para comparação. |
+| `finish_reason` diferente de `stop`, envelope inválido ou JSON inválido | Reprovar a geração, mesmo que um trecho pareça correto. Não reparar ou repetir a resposta para conseguir aprovação. |
+| Todos os contratos aprovados | Revisar manualmente se o texto concorda com os fatos e se as fontes sustentam a resposta. O gate automatizado não cobre essa decisão. |
+
+Ao alterar uma regra, mudar juntos o contexto sintético, o gabarito e uma mutação que o avaliador deva rejeitar. Na revisão, comparar a falha específica e seu efeito no atendimento; a taxa agregada de acerto não compensa vazamento ou prazo incorreto. Os artifacts permitem revisar essa decisão sem anexar respostas ao histórico Git.
+
+O corpus é validado antes do catálogo e da geração. O summary falha quando faltam relatórios ou não há testes registrados. O [contrato da API](https://openrouter.ai/docs/api_reference/overview) define os motivos de término; este cliente aceita apenas `stop` para iniciar a avaliação de conteúdo.
+
 ## Limites do avaliador
 
 O campo `answer` recebe checagem de presença, tamanho e token proibido. **Não há verificação semântica de que o texto concorda com `facts`**, nem validação de fundamentação por linguagem natural. Referências válidas, sozinhas, não provam que uma afirmação está sustentada. A detecção de dado sensível é literal e não cobre codificação ou paráfrase.
@@ -116,6 +130,6 @@ Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell ou
 
 No GitHub, abra **Actions → workflow → execução → Summary**. Em `Tests`, o resumo separa testes unitários e respostas manuais; baixe o artifact `results` para obter `junit.xml` e `evaluation.json`. Em `OpenRouter live`, o resumo informa casos executados, falhas e lote incompleto; o artifact `live-evaluation` contém `live.json`. Upload e resumo rodam também após falha; retenção de 30 dias. Relatório ausente é indicado, sem registrar aprovação.
 
-Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. São 70 testes unitários, incluindo os checks de resumo e mascaramento.
+Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. Os testes unitários incluem resumo, mascaramento e rejeição de entradas ou gerações incompletas.
 
 Datas de commits deste portfólio foram reorganizadas retroativamente; as execuções do Actions mantêm suas datas reais.

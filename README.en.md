@@ -65,9 +65,23 @@ Reference: [OpenRouter rate-limit guidance](https://openrouter.ai/docs/api_refer
 
 ## Coverage
 
-Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Seventy tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
+Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Unit tests verify the evaluator, known mutations, invalid corpora, interrupted generation, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
 
 `fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
+
+## Change acceptance and triage
+
+| Signal | Decision and next step |
+| --- | --- |
+| Empty corpus, duplicate IDs or expected sources missing from context | Block before API calls. Fix the corpus and review the rule with the product owner. |
+| Incorrect deadline, decision, source or forbidden token | Fail the response. QA isolates the case; development investigates the prompt and integration. Do not change expected values to match model output. |
+| Exhausted 429 budget, timeout or incomplete batch | Inconclusive model quality. Check provider availability before rerunning; retain the failed run for comparison. |
+| Non-`stop` finish reason, malformed envelope or invalid JSON | Fail generation even if part of the response looks correct. Do not repair or retry content to obtain a pass. |
+| All contracts pass | Manually check that the text agrees with the facts and sources support the answer. This decision is outside the automated gate. |
+
+A rule change should update the synthetic context, expected result and a mutation the evaluator must reject together. Review the specific failure and its effect on customer support; aggregate accuracy cannot compensate for leakage or an incorrect deadline. Artifacts support that review without committing responses to Git history.
+
+Corpus validation runs before catalog lookup and generation. The summary fails when reports are missing or no tests were recorded. The [API contract](https://openrouter.ai/docs/api_reference/overview) defines finish reasons; this client accepts only `stop` before evaluating content.
 
 ## Limits
 
