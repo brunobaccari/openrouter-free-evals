@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 import pytest
-from live_openrouter import require_free, payload, main
+from live_openrouter import require_free, payload, main, evaluate_completion
 
 
 @pytest.mark.parametrize('model', [
@@ -52,3 +53,33 @@ def test_recusa_destino_diferente_da_openrouter_antes_de_enviar_chave(monkeypatc
 
     monkeypatch.setattr('live_openrouter.urlopen', unexpected_request)
     assert main() == 2
+
+
+@pytest.mark.parametrize('reason,error', [('length', 'truncated'), ('content_filter', 'finish_reason'),
+                                         ('error', 'finish_reason'), (None, 'finish_reason'), ('stop', None)])
+def test_json_correto_nao_aprova_geracao_interrompida(reason, error):
+    case = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))[0]
+    response = json.loads(Path('fixtures/responses.json').read_text(encoding='utf-8'))[0]
+    result = {'choices': [{'finish_reason': reason, 'message': {'content': json.dumps(response)}}]}
+    assert evaluate_completion(case, result)['errors'] == ([error] if error else [])
+
+
+@pytest.mark.parametrize('result', [None, {}, {'choices': []}, {'choices': [None]},
+                                  {'choices': [{'message': None}]}])
+def test_envelope_invalido_vira_falha_do_caso(result):
+    assert evaluate_completion({'id': 'case'}, result) == {'case_id': 'case', 'errors': ['invalid_response']}
+
+
+def test_corpus_vazio_bloqueia_live_antes_de_qualquer_chamada(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'fixtures').mkdir()
+    (tmp_path / 'fixtures/cases.json').write_text('[]', encoding='utf-8')
+    monkeypatch.setenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    monkeypatch.setenv('OPENROUTER_MODEL', 'test:free')
+    monkeypatch.setattr('sys.argv', ['live_openrouter.py'])
+    monkeypatch.setattr('live_openrouter.load_dotenv', lambda: None)
+    monkeypatch.setattr('live_openrouter.urlopen', lambda *a, **k: pytest.fail('Corpus inválido não deve chamar API'))
+    assert main() == 2
+    report = json.loads((tmp_path / 'results/live.json').read_text(encoding='utf-8'))
+    assert report['setup_error'] == 'ValueError'
+    assert report['cases'] == []

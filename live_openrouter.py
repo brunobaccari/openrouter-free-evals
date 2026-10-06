@@ -11,7 +11,7 @@ import random
 import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from evaluate import evaluate
+from evaluate import evaluate, validate_cases
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
@@ -113,6 +113,29 @@ def request_json(request, timeout, policy, budget, transport):
             time.sleep(delay)
 
 
+def evaluate_completion(case, result):
+    item = {'case_id': case['id'], 'errors': []}
+    try:
+        choice = result['choices'][0]
+        content = choice['message']['content']
+        item.update({key: result.get(key) for key in ('model', 'usage', 'provider')})
+        item['finish_reason'] = choice.get('finish_reason')
+    except (KeyError, IndexError, TypeError, AttributeError):
+        item['errors'] = ['invalid_response']
+        return item
+    item['response'] = content
+    if choice.get('finish_reason') != 'stop':
+        item['errors'] = ['truncated' if choice.get('finish_reason') == 'length' else 'finish_reason']
+        return item
+    try:
+        item['response'] = json.loads(content)
+    except (ValueError, TypeError):
+        item['errors'] = ['invalid_json']
+        return item
+    item['errors'] = evaluate(case, item['response'])
+    return item
+
+
 def main():
     load_dotenv()
     base_url = os.environ.get('OPENROUTER_BASE_URL', '').rstrip('/')
@@ -140,6 +163,7 @@ def main():
                   'reasoning': {'enabled': False, 'exclude': True}, 'response_format': 'json_schema',
                   'retry_policy': policy, 'retry_budget': budget, 'catalog_transport': {}, 'cases': []}
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        cases = validate_cases(json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8')))
         catalog = request_json(base_url + '/models', 30, policy, budget, report['catalog_transport'])['data']
         model = next((entry for entry in catalog if entry['id'] == args.model), None)
         if model is None:
@@ -153,7 +177,6 @@ def main():
         key = os.environ.get('OPENROUTER_API_KEY') or getpass('OpenRouter API key (oculta): ')
         if not key.strip():
             raise ValueError('Chave não informada')
-        cases = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
         for case in cases:
             request = Request(base_url + '/chat/completions', method='POST',
                               headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
@@ -161,16 +184,7 @@ def main():
             transport = {}
             try:
                 result = request_json(request, 90, policy, budget, transport)
-                choice = result['choices'][0]
-                content = choice['message']['content']
-                try:
-                    answer = json.loads(content)
-                    errors = evaluate(case, answer)
-                except (ValueError, TypeError):
-                    answer, errors = content, ['truncated' if choice.get('finish_reason') == 'length' else 'invalid_json']
-                item = {'case_id': case['id'], 'model': result.get('model'), 'response': answer,
-                        'errors': errors, 'usage': result.get('usage'), 'provider': result.get('provider'),
-                        'finish_reason': choice.get('finish_reason')}
+                item = evaluate_completion(case, result)
             except HTTPError as error:
                 raw_error = error.read().decode(errors='replace')
                 try:
