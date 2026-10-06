@@ -39,9 +39,29 @@ python live_openrouter.py --model apodex/apodex-1.1-mini:free
 
 Informe a chave no prompt oculto, ou configure `OPENROUTER_API_KEY` no ambiente. Não coloque a chave em arquivo versionado. O cliente consulta o catálogo antes de gerar, recusa preço diferente de zero e envia teto zero para prompt, resposta e requisição, com fallback desativado.
 
-O relatório `results/live.json` registra horário, modelo, provedor, uso informado, resposta e falhas por caso. Erro HTTP ou lote incompleto reprova a execução. Não há retry automático nem troca silenciosa de modelo. Limites de uso do provedor podem impedir uma rodada gratuita.
+O relatório `results/live.json` registra horário, modelo, provedor, uso informado, resposta e falhas por caso. Erro HTTP ou lote incompleto reprova a execução. Somente HTTP 429 tem retry limitado; não há troca silenciosa de modelo. Limites de uso do provedor podem impedir uma rodada gratuita.
 
 O CI automático testa o avaliador e as proteções de custo, sem chamadas a modelo. O workflow manual `OpenRouter live` executa a API quando o secret `OPENROUTER_API_KEY` estiver configurado no repositório. O secret está configurado no GitHub Actions; seu valor não faz parte dos arquivos do projeto.
+
+## Resiliência a HTTP 429
+
+O catálogo e a geração usam a mesma política: uma chamada inicial e até três retries por requisição. `Retry-After` aceita segundos ou data HTTP. Sem header válido, a espera cresce a partir de 5 segundos, com jitter e teto de 60 segundos por espera.
+
+O orçamento de espera é **120 segundos para o lote inteiro**, compartilhado entre catálogo e cenários. Se o servidor pedir mais que o tempo restante, o cliente encerra sem tentar antes do prazo. Cota diária esgotada pode continuar retornando 429; retry não remove esse limite.
+
+Configure no `.env` (valores padrão em `.env.example`):
+
+| Variável | Padrão | Limite aceito |
+| --- | --- | --- |
+| `OPENROUTER_MAX_RETRIES` | 3 | 0–5 por requisição; 0 desativa |
+| `OPENROUTER_RETRY_BASE_SECONDS` | 5 | 1–60 segundos |
+| `OPENROUTER_RETRY_BUDGET_SECONDS` | 120 | 0–300 segundos por execução |
+
+O artifact e o summary registram tentativas, esperas e motivo de encerramento (`retry_limit` ou `wait_budget`). Erros de contrato, JSON inválido, outros status HTTP e timeouts não provocam retry. O modelo, o contexto, o gabarito e as proteções de custo permanecem os mesmos durante as tentativas. Se o 429 persistir, o workflow falha e preserva o lote incompleto.
+
+Os testes de transporte simulam o 429 e substituem o relógio de espera: conferem recuperação, esgotamento, header inválido, data HTTP, erros não elegíveis e ausência de retry diante de uma resposta que viola o contrato.
+
+Referência: [orientação de rate limits da OpenRouter](https://openrouter.ai/docs/api_reference/limits), consultada em 06/10/2026.
 
 ## Estrutura
 
@@ -88,6 +108,6 @@ Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell ou
 
 No GitHub, abra **Actions → workflow → execução → Summary**. Em `Tests`, o resumo separa testes unitários e respostas manuais; baixe o artifact `results` para obter `junit.xml` e `evaluation.json`. Em `OpenRouter live`, o resumo informa casos executados, falhas e lote incompleto; o artifact `live-evaluation` contém `live.json`. Upload e resumo rodam também após falha; retenção de 30 dias. Relatório ausente é indicado, sem registrar aprovação.
 
-Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. São 49 testes unitários, incluindo os checks de resumo e mascaramento.
+Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. São 69 testes unitários, incluindo os checks de resumo e mascaramento.
 
 Datas de commits deste portfólio foram reorganizadas retroativamente; as execuções do Actions mantêm suas datas reais.

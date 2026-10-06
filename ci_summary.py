@@ -68,6 +68,9 @@ def case_details(cases, rows, responses=None):
             if not evaluated:
                 lines += ['<p>Falha de transporte, JSON inválido/truncado ou resposta ausente: não houve avaliação completa das regras de conteúdo.</p>']
         if live and row:
+            if row.get('transport'):
+                lines += ['<p><strong>Tentativas e esperas HTTP</strong></p>',
+                          '<pre>' + escaped(row['transport'], forbidden) + '</pre>']
             metadata = {key: row[key] for key in ('model', 'provider', 'usage', 'finish_reason') if key in row}
             if metadata:
                 lines += ['<p><strong>Metadados informados pelo provedor</strong></p>', '<pre>' + escaped(metadata, forbidden) + '</pre>']
@@ -121,6 +124,11 @@ def main():
     if report.exists():
         try:
             data = json.loads(report.read_text(encoding='utf-8'))
+            if live:
+                retry = {key: data[key] for key in ('retry_policy', 'retry_budget', 'catalog_transport', 'setup_error') if key in data}
+                if retry:
+                    lines += ['<p><strong>Política de retry e transporte do catálogo</strong></p>',
+                              '<pre>' + escaped(retry) + '</pre>']
             rows = data['cases'] if live else data
             cases = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
             responses = None if live else json.loads(Path('fixtures/responses.json').read_text(encoding='utf-8'))

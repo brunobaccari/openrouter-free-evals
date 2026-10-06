@@ -72,3 +72,13 @@ def test_detalhes_fixture_e_live_mantem_fontes_distintas():
     assert 'Manual' in manual_summary and 'Resposta API' not in manual_summary
     assert 'Resposta real recebida da API' in live_summary
     assert 'Resposta API' in live_summary and 'Manual' not in live_summary
+
+
+def test_resumo_live_exibe_tentativas_e_esgotamento():
+    case = {'id': 'one', 'question': 'Q', 'context': [], 'expected': {'decision': 'abstain', 'facts': {}, 'sources': []}}
+    row = {'case_id': 'one', 'errors': ['http_429'],
+           'transport': {'attempts': 4, 'retries': [{'status': 429, 'wait_seconds': 5}], 'stop_reason': 'retry_limit'}}
+    summary = html.unescape('\n'.join(case_details([case], [row])))
+    assert 'Tentativas e esperas HTTP' in summary
+    assert '"attempts": 4' in summary and 'retry_limit' in summary
+    assert 'decision: NÃO AVALIADA' in summary

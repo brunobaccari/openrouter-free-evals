@@ -31,13 +31,33 @@ python live_openrouter.py
 
 Configure the official API URL and free model in `.env`; supply `OPENROUTER_API_KEY` through the environment or the hidden prompt. `.env` is ignored, and process variables take precedence. The API key is configured as a GitHub Actions secret, never as a repository file.
 
-Before generation, the client checks the current catalog: the model must have the `:free` suffix and zero prices. Requests set a zero price ceiling and disable provider fallback. The configured endpoint must be OpenRouter's official HTTPS API. No automatic retries or silent model substitution.
+Before generation, the client checks the current catalog: the model must have the `:free` suffix and zero prices. Requests set a zero price ceiling and disable provider fallback. The configured endpoint must be OpenRouter's official HTTPS API. Only HTTP 429 receives bounded retries; no silent model substitution.
 
 `results/live.json` records timestamp, model, provider, reported usage, responses and case failures. An HTTP error or incomplete batch fails the run. Free-provider limits can still prevent execution.
 
+## HTTP 429 resilience
+
+Catalog and generation requests share one policy: an initial request plus up to three retries per request. `Retry-After` supports seconds and HTTP dates. Without a valid header, exponential backoff starts at five seconds, includes jitter and caps each wait at 60 seconds.
+
+A **120-second total wait budget** is shared across the catalog and all cases. If the server requests more time than remains, execution stops without retrying early. A daily quota can remain exhausted despite retries.
+
+Configure `.env` using `.env.example`:
+
+| Variable | Default | Accepted range |
+| --- | --- | --- |
+| `OPENROUTER_MAX_RETRIES` | 3 | 0–5 per request; 0 disables retries |
+| `OPENROUTER_RETRY_BASE_SECONDS` | 5 | 1–60 seconds |
+| `OPENROUTER_RETRY_BUDGET_SECONDS` | 120 | 0–300 seconds per run |
+
+Artifacts and summaries record attempts, waits and stop reasons (`retry_limit` or `wait_budget`). Contract failures, invalid JSON, other HTTP statuses and timeouts do not trigger retries. The model, context, expected results and cost guards stay unchanged between attempts. Persistent 429s fail the workflow and preserve the incomplete batch.
+
+Transport tests simulate 429s without real waits. They cover recovery, exhaustion, invalid headers, HTTP dates, ineligible errors and a contract failure that must not be retried.
+
+Reference: [OpenRouter rate-limit guidance](https://openrouter.ai/docs/api_reference/limits), reviewed October 6, 2026.
+
 ## Coverage
 
-Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Forty-nine tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
+Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Sixty-nine tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
 
 `fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
 

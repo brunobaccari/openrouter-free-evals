@@ -1,10 +1,14 @@
 import argparse
 from datetime import datetime, timezone
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from getpass import getpass
 import json
+import math
 import os
 from pathlib import Path
+import random
+import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from evaluate import evaluate
@@ -41,6 +45,50 @@ def payload(case, model):
                          {'role': 'user', 'content': json.dumps({key: case[key] for key in ('id', 'question', 'context')}, ensure_ascii=False)}]}
 
 
+def retry_delay(header, retry, base):
+    try:
+        seconds = float(header)
+        if math.isfinite(seconds) and seconds >= 0:
+            return seconds
+    except (TypeError, ValueError):
+        pass
+    if header:
+        try:
+            date = parsedate_to_datetime(header)
+            if date.tzinfo is not None:
+                return max(0, (date - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return min(60, base * 2 ** retry + random.uniform(0, base))
+
+
+def request_json(request, timeout, policy, budget, transport):
+    transport.update(attempts=0, retries=[])
+    for attempt in range(policy['max_retries'] + 1):
+        transport['attempts'] += 1
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code != 429:
+                raise
+            if attempt == policy['max_retries']:
+                transport['stop_reason'] = 'retry_limit'
+                raise
+            delay = retry_delay(error.headers.get('Retry-After') if error.headers else None,
+                                attempt, policy['base_delay_seconds'])
+            if delay > budget['remaining_seconds']:
+                transport['stop_reason'] = 'wait_budget'
+                transport['required_wait_seconds'] = delay
+                raise
+            transport['retries'].append({'after_attempt': attempt + 1, 'status': 429,
+                                         'wait_seconds': delay})
+            budget['remaining_seconds'] -= delay
+            error.close()
+            print(f'HTTP 429: nova tentativa {attempt + 2}; espera de {delay:.1f}s.', flush=True)
+            time.sleep(delay)
+
+
 def main():
     load_dotenv()
     base_url = os.environ.get('OPENROUTER_BASE_URL', '').rstrip('/')
@@ -48,33 +96,42 @@ def main():
     parser.add_argument('--model', default=os.environ.get('OPENROUTER_MODEL'))
     parser.add_argument('--output', type=Path, default=Path('results/live.json'))
     args = parser.parse_args()
+    report = None
     try:
         endpoint = urlparse(base_url)
         if endpoint.scheme != 'https' or endpoint.netloc != 'openrouter.ai' or endpoint.path != '/api/v1' or endpoint.query or endpoint.fragment:
             raise ValueError('OPENROUTER_BASE_URL deve apontar para a API HTTPS oficial')
         if not args.model:
             raise ValueError('Configure OPENROUTER_MODEL ou informe --model')
-        with urlopen(base_url + '/models', timeout=30) as response:
-            catalog = json.load(response)['data']
+        policy = {'max_retries': int(os.environ.get('OPENROUTER_MAX_RETRIES', '3')),
+                  'base_delay_seconds': float(os.environ.get('OPENROUTER_RETRY_BASE_SECONDS', '5')),
+                  'wait_budget_seconds': float(os.environ.get('OPENROUTER_RETRY_BUDGET_SECONDS', '120'))}
+        if not (0 <= policy['max_retries'] <= 5 and
+                1 <= policy['base_delay_seconds'] <= 60 and
+                0 <= policy['wait_budget_seconds'] <= 300):
+            raise ValueError('Configuração de retry fora dos limites')
+        budget = {'remaining_seconds': policy['wait_budget_seconds']}
+        report = {'executed_at': datetime.now(timezone.utc).isoformat(), 'requested_model': args.model,
+                  'temperature': 0, 'max_tokens': 4096, 'reasoning_effort': 'low',
+                  'retry_policy': policy, 'retry_budget': budget, 'catalog_transport': {}, 'cases': []}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        catalog = request_json(base_url + '/models', 30, policy, budget, report['catalog_transport'])['data']
         model = next((entry for entry in catalog if entry['id'] == args.model), None)
         if model is None:
             raise ValueError('Modelo ausente do catálogo atual')
         require_free(model)
+        report['catalog_pricing'] = model['pricing']
         key = os.environ.get('OPENROUTER_API_KEY') or getpass('OpenRouter API key (oculta): ')
         if not key.strip():
             raise ValueError('Chave não informada')
         cases = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
-        report = {'executed_at': datetime.now(timezone.utc).isoformat(), 'requested_model': args.model,
-                  'catalog_pricing': model['pricing'], 'temperature': 0, 'max_tokens': 4096,
-                  'reasoning_effort': 'low', 'cases': []}
-        args.output.parent.mkdir(parents=True, exist_ok=True)
         for case in cases:
             request = Request(base_url + '/chat/completions', method='POST',
                               headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
                               data=json.dumps(payload(case, args.model)).encode())
+            transport = {}
             try:
-                with urlopen(request, timeout=90) as response:
-                    result = json.load(response)
+                result = request_json(request, 90, policy, budget, transport)
                 choice = result['choices'][0]
                 content = choice['message']['content']
                 try:
@@ -95,6 +152,7 @@ def main():
                         'message': str(message).replace(key, '[redacted]')[:500]}
             except (URLError, TimeoutError, KeyError) as error:
                 item = {'case_id': case['id'], 'errors': [type(error).__name__]}
+            item['transport'] = transport
             report['cases'].append(item)
             args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
             print(case['id'], item['errors'] or 'PASS', flush=True)
@@ -105,8 +163,13 @@ def main():
         print(f'{len(report["cases"])} de {len(cases)} casos executados; {failures} falhas.')
         return 1 if failures or not complete else 0
     except (ValueError, URLError, OSError) as error:
+        if report is not None:
+            report['setup_error'] = f'http_{error.code}' if isinstance(error, HTTPError) else type(error).__name__
         print(f'Execução interrompida: {type(error).__name__}. Confira modelo, conexão e autenticação.')
         return 2
+    finally:
+        if report is not None:
+            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 if __name__ == '__main__':
