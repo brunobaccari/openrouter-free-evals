@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import sys
 import xml.etree.ElementTree as ET
+from evaluate import validate_cases
 
 
 RULES = {
@@ -111,13 +112,14 @@ def main():
                 counts = {key: sum(int(suite.attrib[key]) for suite in suites)
                           for key in ('tests', 'failures', 'errors', 'skipped')}
                 passed = counts['tests'] - counts['failures'] - counts['errors'] - counts['skipped']
-                if passed < 0 or any(value < 0 for value in counts.values()):
+                if counts['tests'] == 0 or passed < 0 or any(value < 0 for value in counts.values()):
                     raise ValueError('Contagens inconsistentes')
                 lines.append(f"Testes unitários: {counts['tests']} total; {passed} passaram; {counts['failures']} falhas; {counts['errors']} erros; {counts['skipped']} ignorados.")
             except (ET.ParseError, OSError, ValueError, KeyError):
                 invalid_report = True
                 lines.append('**JUnit ilegível ou inválido: contagens indisponíveis; não há aprovação registrada.**')
         else:
+            invalid_report = True
             lines.append('JUnit ausente; confira a instalação e a execução. Não há aprovação registrada.')
     lines += ['', f"Etapa de avaliação: **{os.environ.get('EVALUATION_OUTCOME', 'não informado')}**.", '']
     report = Path('results/live.json' if live else 'results/evaluation.json')
@@ -130,7 +132,7 @@ def main():
                     lines += ['<p><strong>Política de retry e transporte do catálogo</strong></p>',
                               '<pre>' + escaped(retry) + '</pre>']
             rows = data['cases'] if live else data
-            cases = json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8'))
+            cases = validate_cases(json.loads(Path('fixtures/cases.json').read_text(encoding='utf-8')))
             responses = None if live else json.loads(Path('fixtures/responses.json').read_text(encoding='utf-8'))
             details = case_details(cases, rows, responses)
             forbidden = [secret for case in cases for secret in case.get('forbidden', [])]
@@ -139,6 +141,7 @@ def main():
             invalid_report = True
             lines.append('**Relatório de avaliação ilegível ou inválido: contagens indisponíveis; não há aprovação registrada.**')
     else:
+        invalid_report = True
         lines.append('Relatório não gerado: confira configuração, catálogo, conexão e execução. Não há aprovação registrada.')
     url = os.environ.get('ARTIFACT_URL')
     lines += ['', f'[Baixar relatórios desta execução]({url})' if url else 'Artifact indisponível: confira a etapa de upload.']

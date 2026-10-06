@@ -1,5 +1,6 @@
 import sys
 import html
+import pytest
 from ci_summary import evaluation_summary, case_details, main
 
 
@@ -82,3 +83,12 @@ def test_resumo_live_exibe_tentativas_e_esgotamento():
     assert 'Tentativas e esperas HTTP' in summary
     assert '"attempts": 4' in summary and 'retry_limit' in summary
     assert 'decision: NÃO AVALIADA' in summary
+
+
+@pytest.mark.parametrize('mode', ['fixtures', 'live'])
+def test_resumo_sem_relatorio_falha_explicitamente(tmp_path, monkeypatch, mode):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['ci_summary.py', mode])
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(tmp_path / 'summary.md'))
+    assert main() == 1
+    assert 'Não há aprovação registrada' in (tmp_path / 'summary.md').read_text(encoding='utf-8')
