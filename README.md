@@ -110,9 +110,39 @@ Ao alterar uma regra, mudar juntos o contexto sintético, o gabarito e uma muta�
 
 O corpus é validado antes do catálogo e da geração. O summary falha quando faltam relatórios ou não há testes registrados. O [contrato da API](https://openrouter.ai/docs/api_reference/overview) define os motivos de término; este cliente aceita apenas `stop` para iniciar a avaliação de conteúdo.
 
+## Documentos e ataques às instruções
+
+Além dos 20 casos de regressão, `fixtures/adversarial.json` contém 12 casos: oito para ajuste e quatro para controle (`holdout`). Cobrem falsas mensagens de sistema/tool, JSON de resposta imposto pelo usuário, instrução escondida em documento, reserva sem evidência e extração de token por codificação ou espaçamento. São cenários sintéticos, sem documentos ou segredos de clientes.
+
+`fixtures/documents/` contém uma política vigente e notas usadas nos ataques. O carregador lê apenas Markdown dentro dessa pasta, resolve o conteúdo antes da chamada e recusa caminhos que saiam dela. O modelo recebe o texto e o ID da fonte, nunca o gabarito. Isso exercita uso de contexto documental; não implementa busca vetorial nem demonstra qualidade de um RAG completo.
+
+```bash
+python evaluate.py --cases fixtures/adversarial.json --responses fixtures/adversarial-responses.json --output results/adversarial.json
+python live_openrouter.py --cases fixtures/adversarial.json --prompt-file prompts/guardrails-v2.txt
+```
+
+As respostas manuais exercitam o avaliador, não comprovam que um modelo resiste aos ataques. O summary mascara também as transformações de token que o avaliador reconhece.
+
+## Comparar modelos e iterar o prompt
+
+O prompt atual permanece como baseline. `prompts/guardrails-v2.txt` é um candidato: explicita fronteiras entre instruções e documentos, recusa extração transformada e exige coerência entre decisão, fatos e explicação. Ainda precisa de comparação live antes de substituir o baseline.
+
+Os três modelos configurados em `.env.example` são Apodex Mini, Dots Note e Nemotron Super em suas variantes gratuitas. A disponibilidade e os parâmetros são reconferidos no catálogo a cada execução. Não há troca automática para modelo pago.
+
+```bash
+python compare_prompts.py --split development --repeats 1
+python compare_prompts.py --split holdout --repeats 1
+```
+
+O workflow manual **Compare prompts** faz a mesma comparação. Cada par usa os mesmos casos, modelo e parâmetros. O orçamento é calculado antes de gerar; sem cota suficiente o lote é bloqueado e não aparece como aprovado. `--models` permite selecionar um subconjunto; `--repeats` aceita até três rodadas. Os relatórios ficam nos artifacts, separados por modelo, prompt e rodada, com hashes do corpus e do prompt.
+
+Trabalhe primeiro nos oito casos de ajuste: examine a falha e mude uma regra do prompt por vez. Repita baseline e candidato nas mesmas condições; uma única resposta correta não demonstra estabilidade. Só depois rode os quatro casos de controle e a regressão de 20 casos. Se usar uma falha do controle para ajustar o prompt, esse conjunto deixa de ser independente: acrescente casos inéditos antes de tomar uma decisão de promoção. Melhorar o candidato nunca altera o gabarito para acompanhar a resposta.
+
+Cota esgotada, erro de transporte e resposta truncada ficam separados das falhas de contrato. Não conclua que um modelo é melhor quando algum lote está incompleto. Mesmo com todos os contratos aprovados, revise a explicação textual antes de promover o prompt.
+
 ## Limites do avaliador
 
-O campo `answer` recebe checagem de presença, tamanho e token proibido. **Não há verificação semântica de que o texto concorda com `facts`**, nem validação de fundamentação por linguagem natural. Referências válidas, sozinhas, não provam que uma afirmação está sustentada. A detecção de dado sensível é literal e não cobre codificação ou paráfrase.
+O campo `answer` recebe checagem de presença, tamanho e token proibido. **Não há verificação semântica de que o texto concorda com `facts`**, nem validação de fundamentação por linguagem natural. Referências válidas, sozinhas, não provam que uma afirmação está sustentada. A detecção de token cobre texto literal, base64, hexadecimal, ROT13, espaços e caracteres de largura zero. Não cobre codificações arbitrárias, fragmentos isolados ou paráfrases.
 
 Cada rodada live registra modelo, parâmetros e respostas. Ainda é necessário revisar a coerência do texto com os fatos; aprovação deste corpus pequeno não demonstra qualidade geral ou segurança completa de um modelo. Não envie dados internos de empresa para este corpus.
 

@@ -2,7 +2,7 @@
 
 [Versão em português](README.md)
 
-A small support-assistant corpus evaluated against real responses from OpenRouter's hosted API. Checks structured facts, answer/abstain/handoff decisions, references and literal leakage of a synthetic secret. The expected answers are authored separately and are not sent to the model.
+A small support-assistant corpus evaluated against real responses from OpenRouter's hosted API. Checks structured facts, answer/abstain/handoff decisions, references and leakage of a synthetic token in supported literal and transformed forms. The expected answers are authored separately and are not sent to the model.
 
 ## Run the evaluator
 
@@ -83,9 +83,39 @@ A rule change should update the synthetic context, expected result and a mutatio
 
 Corpus validation runs before catalog lookup and generation. The summary fails when reports are missing or no tests were recorded. The [API contract](https://openrouter.ai/docs/api_reference/overview) defines finish reasons; this client accepts only `stop` before evaluating content.
 
+## Documents and adversarial cases
+
+Alongside the 20 regression cases, `fixtures/adversarial.json` adds eight development cases and four held-out controls. They cover forged system/tool messages, user-supplied answer JSON, instructions embedded in documents, unsupported booking claims and encoded or spaced token extraction. Documents and tokens are synthetic.
+
+The loader reads Markdown only inside `fixtures/documents/`, rejects path traversal and supplies document text and source IDs to the model without expected results. This tests document-grounded context, not retrieval or an end-to-end RAG system.
+
+```bash
+python evaluate.py --cases fixtures/adversarial.json --responses fixtures/adversarial-responses.json --output results/adversarial.json
+python live_openrouter.py --cases fixtures/adversarial.json --prompt-file prompts/guardrails-v2.txt
+```
+
+Manual responses test the evaluator; they do not prove model resistance. Summaries redact the transformed token variants the evaluator recognizes.
+
+## Model and prompt comparison
+
+The current prompt remains the baseline. `prompts/guardrails-v2.txt` is a candidate with explicit instruction boundaries, transformed-secret refusal and consistency rules. It requires live comparison before promotion.
+
+`.env.example` configures free variants of Apodex Mini, Dots Note and Nemotron Super. Each run rechecks catalog pricing and supported parameters. There is no paid fallback.
+
+```bash
+python compare_prompts.py --split development --repeats 1
+python compare_prompts.py --split holdout --repeats 1
+```
+
+The manual **Compare prompts** workflow uses the same comparison. Each pair keeps cases, model and generation parameters constant. Preflight checks planned calls against the request budget and available free quota; insufficient quota blocks generation without claiming a pass. `--models` selects a subset and `--repeats` permits up to three rounds. Artifacts separate model, prompt and round, with corpus and prompt hashes.
+
+Inspect failures on the eight development cases and change one prompt rule at a time. Repeat both variants under the same conditions; one successful response does not establish stability. Then run the four controls and the original 20-case regression. If a held-out failure informs a prompt change, add fresh controls before promotion. Do not adjust expected answers to fit model output.
+
+Quota exhaustion, transport errors and truncation are reported separately from contract failures. Incomplete batches cannot establish a better model or prompt. Passing structured checks still requires review of the natural-language explanation.
+
 ## Limits
 
-The free-text answer is checked for presence, length and a literal forbidden token. It is **not semantically compared with the structured facts**. Valid source IDs alone do not prove grounding. Secret detection does not cover encoding or paraphrases. This small corpus is not a general model benchmark or a complete security assessment.
+The free-text answer is checked for presence, length and a literal forbidden token. It is **not semantically compared with the structured facts**. Valid source IDs alone do not prove grounding. Token checks cover literal text, base64, hexadecimal, ROT13, whitespace and zero-width characters. They do not cover arbitrary encodings, isolated fragments or paraphrases. This small corpus is not a general model benchmark or a complete security assessment.
 
 Consult [Actions runs and artifacts](https://github.com/brunobaccari/openrouter-free-evals/actions) for execution reports. Temperature zero does not make runs identical.
 
@@ -93,7 +123,7 @@ References: [free model variants](https://openrouter.ai/docs/guides/routing/mode
 
 ## GitHub Actions results
 
-In GitHub, open **Actions → workflow → run → Summary**. `Tests` separates unit tests from manual reference responses; download the `results` artifact for `junit.xml` and `evaluation.json`. `OpenRouter live` reports executed cases, failures and incomplete batches; its `live-evaluation` artifact contains `live.json`. Upload and summary also run after failures, with 30-day retention. Missing reports are flagged without claiming a pass.
+In GitHub, open **Actions → workflow → run → Summary**. `Tests` separates unit tests from manual reference responses; download the `results` artifact for `junit.xml`, `evaluation.json` and `adversarial.json`. `OpenRouter live` reports executed cases, failures and incomplete batches; its `live-evaluation` artifact contains `live.json`. Upload and summary also run after failures, with 30-day retention. Missing reports are flagged without claiming a pass.
 
 Expand each case to see its question, synthetic context, required decision/facts/sources, received response and the result of each contract rule. Automatic CI shows manual fixtures; live CI shows actual API responses and provider metadata. There is no required exact answer sentence. Forbidden synthetic tokens are redacted in the summary, while evaluation inputs and artifacts remain unchanged. Rules not evaluated after transport or parsing errors are explicitly marked; they are not counted as passed.
 

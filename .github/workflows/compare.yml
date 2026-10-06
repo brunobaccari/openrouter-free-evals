@@ -1,0 +1,80 @@
+name: Compare prompts on free models
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: IDs free separados por vírgula
+        required: true
+        default: apodex/apodex-1.1-mini:free,dots-studio/dots-3-note-preview:free,nvidia/nemotron-3-super-120b-a12b:free
+      split:
+        description: Holdout apenas depois de congelar o prompt
+        type: choice
+        options: [development, holdout, all]
+        default: development
+      repeats:
+        description: Repetições pareadas por modelo
+        type: choice
+        options: ['1', '2', '3']
+        default: '1'
+      max_requests:
+        description: Limite de gerações planejadas (retries são adicionais e limitados)
+        type: number
+        default: 60
+permissions:
+  contents: read
+concurrency:
+  group: openrouter-comparison
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar arquivos versionados
+        shell: bash
+        run: |
+          tracked=$(git ls-files --cached --ignored --exclude-standard)
+          if [ -n "$tracked" ]; then
+            printf 'Arquivos ignorados versionados:\n%s\n' "$tracked"
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python -m pip install -r requirements.txt
+      - run: cp .env.example .env
+      - name: Verificar comparador sem API
+        run: python -m pytest -q tests/test_compare_prompts.py --junitxml=results/comparison-checks.xml
+      - name: Comparar prompts
+        id: compare
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_COMPARE_MODELS: ${{ inputs.models }}
+          SPLIT: ${{ inputs.split }}
+          REPEATS: ${{ inputs.repeats }}
+          MAX_REQUESTS: ${{ inputs.max_requests }}
+        run: python compare_prompts.py --split "$SPLIT" --repeats "$REPEATS" --max-requests "$MAX_REQUESTS"
+      - uses: actions/upload-artifact@v4
+        id: artifact
+        if: always()
+        with:
+          name: prompt-comparison
+          path: |
+            results/comparison/
+            results/comparison-checks.xml
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Resumo da comparação
+        if: always()
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          if [ -f results/comparison/summary.md ]; then
+            cat results/comparison/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'Comparação não executada; confira a configuração e os testes offline.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "$ARTIFACT_URL" ]; then
+            printf '\n[Relatórios desta execução](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
