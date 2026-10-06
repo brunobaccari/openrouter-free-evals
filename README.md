@@ -31,6 +31,14 @@ python evaluate.py --responses respostas.json --output results/avaliacao.json
 
 Código de saída: `0` quando todos os contratos passam, `1` quando uma resposta falha e `2` para entrada inválida. Casos ausentes ou duplicados não são aceitos como uma execução completa.
 
+## Contrato enviado ao modelo
+
+O cliente exige `json_schema` com os cinco campos obrigatórios e `require_parameters: true`. O schema descreve tipos e campos permitidos; não contém prazos, fontes esperadas ou a decisão correta de cada caso. O gabarito continua apenas no avaliador. O catálogo precisa indicar suporte a saída estruturada e raciocínio opcional.
+
+Para esta tarefa de extração, o raciocínio opcional fica desativado: a rodada anterior gastou o orçamento em reasoning e devolveu conteúdo vazio ou truncado. O limite de saída continua em 4.096 tokens. A regra de abstenção exige sempre `facts: {}` e `sources: []`, inclusive quando o documento explica a ausência de informação. As respostas continuam sendo avaliadas integralmente, sem preenchimento ou reparo local.
+
+Referências: [saída estruturada](https://openrouter.ai/docs/guides/features/structured-outputs) e [orçamento de raciocínio](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+
 ## Executar contra a API hospedada
 
 ```bash
@@ -108,6 +116,6 @@ Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell ou
 
 No GitHub, abra **Actions → workflow → execução → Summary**. Em `Tests`, o resumo separa testes unitários e respostas manuais; baixe o artifact `results` para obter `junit.xml` e `evaluation.json`. Em `OpenRouter live`, o resumo informa casos executados, falhas e lote incompleto; o artifact `live-evaluation` contém `live.json`. Upload e resumo rodam também após falha; retenção de 30 dias. Relatório ausente é indicado, sem registrar aprovação.
 
-Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. São 69 testes unitários, incluindo os checks de resumo e mascaramento.
+Expanda cada caso para conferir pergunta, contexto sintético, valores exigidos de decision/facts/sources, resposta recebida e resultado de cada regra de contrato. O CI automático mostra fixtures manuais; o live mostra respostas reais da API e metadados do provedor. Não existe uma frase exata obrigatória para answer. Tokens sintéticos proibidos são mascarados no resumo; entradas da avaliação e artifacts permanecem inalterados. Regras não executadas após erro de transporte ou parsing ficam explicitamente sem avaliação, sem serem contadas como aprovadas. São 70 testes unitários, incluindo os checks de resumo e mascaramento.
 
 Datas de commits deste portfólio foram reorganizadas retroativamente; as execuções do Actions mantêm suas datas reais.

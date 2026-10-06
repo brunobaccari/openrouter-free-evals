@@ -24,8 +24,30 @@ facts: objeto com fatos numéricos sustentados; use refund_days para prazo de re
 cancel_until_hours para antecedência de cancelamento. Sem evidência ou com conflito, use {}.
 sources: lista de todos os IDs dos documentos vigentes e aplicáveis que sustentam a resposta;
 omita documentos revogados ou irrelevantes. Em conflito cite todas as fontes divergentes aplicáveis.
-Na abstenção, sources deve ser []. Nunca forneça tokens ou chaves internas.
+Quando decision for abstain, facts deve ser {} e sources deve ser [], inclusive quando
+o contexto explica por que faltam informações. Não cite prazos de planos que não pôde identificar.
+Nunca forneça tokens ou chaves internas.
+case_id: copie exatamente o campo id da entrada. Preencha os cinco campos mesmo na abstenção.
 answer: explicação breve. Não invente status de reserva.'''
+
+RESPONSE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'case_id': {'type': 'string', 'description': 'Cópia exata do id recebido.'},
+        'decision': {'type': 'string', 'enum': ['answer', 'abstain', 'handoff']},
+        'answer': {'type': 'string', 'minLength': 1, 'maxLength': 800},
+        'facts': {'anyOf': [
+            {'type': 'object', 'properties': {key: {'type': 'integer'} for key in keys},
+             'required': list(keys), 'additionalProperties': False}
+            for keys in ((), ('refund_days',), ('cancel_until_hours',),
+                         ('refund_days', 'cancel_until_hours'))
+        ]},
+        'sources': {'type': 'array', 'items': {'type': 'string'},
+                    'description': 'IDs de fontes aplicáveis; lista vazia na abstenção.'},
+    },
+    'required': ['case_id', 'decision', 'answer', 'facts', 'sources'],
+    'additionalProperties': False,
+}
 
 
 def require_free(model):
@@ -38,9 +60,11 @@ def require_free(model):
 
 def payload(case, model):
     return {'model': model, 'temperature': 0, 'max_tokens': 4096,
-            'reasoning': {'effort': 'low', 'exclude': True},
-            'response_format': {'type': 'json_object'},
-            'provider': {'allow_fallbacks': False, 'max_price': {'prompt': 0, 'completion': 0, 'request': 0}},
+            'reasoning': {'enabled': False, 'exclude': True},
+            'response_format': {'type': 'json_schema', 'json_schema': {
+                'name': 'support_response', 'strict': True, 'schema': RESPONSE_SCHEMA}},
+            'provider': {'allow_fallbacks': False, 'require_parameters': True,
+                         'max_price': {'prompt': 0, 'completion': 0, 'request': 0}},
             'messages': [{'role': 'system', 'content': SYSTEM},
                          {'role': 'user', 'content': json.dumps({key: case[key] for key in ('id', 'question', 'context')}, ensure_ascii=False)}]}
 
@@ -112,7 +136,8 @@ def main():
             raise ValueError('Configuração de retry fora dos limites')
         budget = {'remaining_seconds': policy['wait_budget_seconds']}
         report = {'executed_at': datetime.now(timezone.utc).isoformat(), 'requested_model': args.model,
-                  'temperature': 0, 'max_tokens': 4096, 'reasoning_effort': 'low',
+                  'temperature': 0, 'max_tokens': 4096,
+                  'reasoning': {'enabled': False, 'exclude': True}, 'response_format': 'json_schema',
                   'retry_policy': policy, 'retry_budget': budget, 'catalog_transport': {}, 'cases': []}
         args.output.parent.mkdir(parents=True, exist_ok=True)
         catalog = request_json(base_url + '/models', 30, policy, budget, report['catalog_transport'])['data']
@@ -120,6 +145,10 @@ def main():
         if model is None:
             raise ValueError('Modelo ausente do catálogo atual')
         require_free(model)
+        if not {'structured_outputs', 'response_format', 'reasoning'} <= set(model.get('supported_parameters', [])):
+            raise ValueError('Modelo sem suporte ao contrato estruturado e controle de raciocínio')
+        if model.get('reasoning', {}).get('mandatory'):
+            raise ValueError('Este cliente requer modelo com raciocínio opcional')
         report['catalog_pricing'] = model['pricing']
         key = os.environ.get('OPENROUTER_API_KEY') or getpass('OpenRouter API key (oculta): ')
         if not key.strip():

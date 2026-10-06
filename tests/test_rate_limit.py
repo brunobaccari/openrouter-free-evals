@@ -115,7 +115,8 @@ def test_live_registra_retry_sem_repetir_falha_de_contrato(tmp_path, monkeypatch
     def request(req, timeout):
         calls.append(req)
         if len(calls) == 1:
-            data = {'data': [{'id': 'test:free', 'pricing': {'prompt': '0', 'completion': '0'}}]}
+            data = {'data': [{'id': 'test:free', 'pricing': {'prompt': '0', 'completion': '0'},
+                             'supported_parameters': ['structured_outputs', 'response_format', 'reasoning']}]}
         elif len(calls) == 2:
             raise rate_limit(retry_after='7')
         else:

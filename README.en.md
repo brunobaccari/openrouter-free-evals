@@ -23,6 +23,14 @@ python evaluate.py --responses responses.json --output results/evaluation.json
 
 Exit codes: 0 for approval, 1 for failed responses and 2 for invalid input. Missing or duplicate cases are not accepted as a complete batch.
 
+## Contract sent to the model
+
+The client requires `json_schema` with all five fields and `require_parameters: true`. The schema specifies types and allowed fields; it does not contain case-specific deadlines, source IDs or expected decisions. Expected values stay in the evaluator. The catalog must advertise structured outputs and optional reasoning.
+
+Optional reasoning is disabled for this extraction task: the previous run consumed its reasoning budget and returned empty or truncated content. The output limit remains 4,096 tokens. Abstention always requires `facts: {}` and `sources: []`, even when a document explains the missing information. Responses are evaluated without local repairs or filled-in fields.
+
+References: [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs) and [reasoning budget](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+
 ## Call the hosted API
 
 ```bash
@@ -57,7 +65,7 @@ Reference: [OpenRouter rate-limit guidance](https://openrouter.ai/docs/api_refer
 
 ## Coverage
 
-Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Sixty-nine tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
+Twenty cases cover refund and cancellation rules, applicable products and plans, missing information, policy versions, conflicting and corroborating sources, negation, English input, irrelevant numbers and prompt injection. Seventy tests verify the evaluator, known mutations, incomplete batches, cost guards, rejection of an invalid API destination and the accuracy and redaction of CI summaries.
 
 `fixtures/cases.json` defines the corpus; `fixtures/responses.json` contains manual reference responses. `evaluate.py` evaluates a batch. `live_openrouter.py` requests real responses. Automatic CI tests the evaluator without model calls; the manual `OpenRouter live` workflow uses the repository secret.
 
