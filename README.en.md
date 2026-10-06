@@ -1,8 +1,10 @@
-# OpenRouter — response evaluation with Python
+# OpenRouter — response evaluation with Python and pytest
 
 [Versão em português](README.md)
 
 A small support-assistant corpus evaluated against real responses from OpenRouter's hosted API. Checks structured facts, answer/abstain/handoff decisions, references and leakage of a synthetic token in supported literal and transformed forms. The expected answers are authored separately and are not sent to the model.
+
+pytest covers the evaluator, HTTP client and execution safeguards. Model responses are evaluated through the project's Python CLI.
 
 ## Run the evaluator
 
@@ -117,7 +119,7 @@ Quota exhaustion, transport errors and truncation are reported separately from c
 
 The free-text answer is checked for presence, length and a literal forbidden token. It is **not semantically compared with the structured facts**. Valid source IDs alone do not prove grounding. Token checks cover literal text, base64, hexadecimal, ROT13, whitespace and zero-width characters. They do not cover arbitrary encodings, isolated fragments or paraphrases. This small corpus is not a general model benchmark or a complete security assessment.
 
-Consult [Actions runs and artifacts](https://github.com/brunobaccari/openrouter-free-evals/actions) for execution reports. Temperature zero does not make runs identical.
+Consult [Actions runs and artifacts](https://github.com/brunobaccari/pytest-openrouter-evals/actions) for execution reports. Temperature zero does not make runs identical.
 
 References: [free model variants](https://openrouter.ai/docs/guides/routing/model-variants/free) and [provider price limits](https://openrouter.ai/docs/guides/routing/provider-selection).
 

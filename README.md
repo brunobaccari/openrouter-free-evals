@@ -1,10 +1,12 @@
-# OpenRouter — avaliação de respostas com Python
+# OpenRouter — avaliação de respostas com Python e pytest
 
 [English version](README.en.md)
 
 Exemplo de avaliação de respostas estruturadas para um assistente de atendimento. Confere fatos esperados, decisão de responder ou abster-se, referências e vazamento de um segredo sintético.
 
 A execução real usa a API hospedada da OpenRouter, somente com modelos `:free` e preço zero confirmado no catálogo. O corpus de referência é manual; o gabarito não é enviado ao modelo.
+
+O pytest cobre os testes do avaliador, do cliente HTTP e das proteções de execução. A avaliação das respostas dos modelos usa o CLI Python do projeto.
 
 ## Instalação
 
@@ -148,7 +150,7 @@ Cada rodada live registra modelo, parâmetros e respostas. Ainda é necessário 
 
 ## Relatórios
 
-`results/evaluation.json` mostra falhas por caso. `results/junit.xml` registra os testes do avaliador. Ambos são guardados no CI. A execução do corpus manual é um teste do mecanismo, não um benchmark. Veja [Execuções e artifacts no Actions](https://github.com/brunobaccari/openrouter-free-evals/actions).
+`results/evaluation.json` mostra falhas por caso. `results/junit.xml` registra os testes do avaliador. Ambos são guardados no CI. A execução do corpus manual é um teste do mecanismo, não um benchmark. Veja [Execuções e artifacts no Actions](https://github.com/brunobaccari/pytest-openrouter-evals/actions).
 
 Referências: [modelos gratuitos](https://openrouter.ai/docs/guides/routing/model-variants/free), [limite de preço por provedor](https://openrouter.ai/docs/guides/routing/provider-selection).
 
