@@ -1,0 +1,11 @@
+{
+  "name": "pytest-openrouter-evals",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "check:local": "git diff --cached --check && python -m pytest -q tests/test_ci_summary.py"
+  },
+  "devDependencies": {
+    "husky": "9.1.7"
+  }
+}

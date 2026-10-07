@@ -130,3 +130,5 @@ In GitHub, open **Actions → workflow → run → Summary**. `Tests` separates 
 Expand each case to see its question, synthetic context, required decision/facts/sources, received response and the result of each contract rule. Automatic CI shows manual fixtures; live CI shows actual API responses and provider metadata. There is no required exact answer sentence. Forbidden synthetic tokens are redacted in the summary, while evaluation inputs and artifacts remain unchanged. Rules not evaluated after transport or parsing errors are explicitly marked; they are not counted as passed.
 
 Commit dates in this portfolio were reorganized retroactively; Actions runs retain their actual execution dates.
+
+Husky: with Node 24 and the stack dependencies installed, run `npm ci` to enable pre-commit. `npm run check:local` checks the diff, report gate and existing type/lint checks. The hook also rejects ignored files in the index. Browser, emulator and API tests remain in CI.
